@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: future-me-app
+  namespace: future-me
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: future-me-app
+  template:
+    metadata:
+      labels:
+        app: future-me-app
+    spec:
+      containers:
+        - name: future-me-app
+          image: future-me/app:v3
+          imagePullPolicy: Never #Important since image is local only
+          env:
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: future-me-secrets
+                  key: openai-api-key
+            - name: GITHUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: future-me-secrets
+                  key: github-token
+            - name: GITHUB_MAX_COMMITS
+              value: "100"
+            - name: FUTURE_ME_NAME
+              value: "Aziz"
+            - name: FUTURE_ME_YEARS_AHEAD
+              value: "1"
+            - name: REDIS_URL
+              value: "redis://redis.future-me.svc.cluster.local:6379/0"
+            - name: REDIS_INDEX_NAME
+              value: "future_me_github"
+          ports:
+            - containerPort: 8000
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "512Mi"
+            limits:
+              cpu: "1"
+              memory: "1Gi"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: future-me-app
+  namespace: future-me
+spec:
+  selector:
+    app: future-me-app
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8000
+  type: ClusterIP

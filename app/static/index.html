@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>Future-Me Simulator</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        }
+
+        body {
+            background: #0f172a;
+            color: #e5e7eb;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            padding: 16px;
+        }
+
+        .chat-shell {
+            background: #020617;
+            border-radius: 18px;
+            max-width: 900px;
+            width: 100%;
+            height: 100%;
+            max-height: 650px;
+            display: flex;
+            flex-direction: column;
+            border: 1px solid #1f2937;
+            box-shadow: 0 18px 40px rgba(0, 0, 0, 0.6);
+            overflow: hidden;
+        }
+
+        .chat-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid #1f2937;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 999px;
+            background: linear-gradient(135deg, #22c55e, #38bdf8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            font-weight: 700;
+            color: #020617;
+        }
+
+        .title-block {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .title-block h1 {
+            font-size: 16px;
+            font-weight: 600;
+        }
+
+        .title-block span {
+            font-size: 12px;
+            color: #9ca3af;
+        }
+
+        .chat-log {
+            flex: 1;
+            padding: 16px;
+            overflow-y: auto;
+            background: radial-gradient(circle at top left, #0b1120, #020617);
+        }
+
+        .msg-row {
+            display: flex;
+            margin-bottom: 12px;
+        }
+
+        .msg-row.user {
+            justify-content: flex-end;
+        }
+
+        .msg-row.assistant {
+            justify-content: flex-start;
+        }
+
+        .msg-bubble {
+            max-width: 75%;
+            padding: 10px 14px;
+            border-radius: 14px;
+            font-size: 14px;
+            line-height: 1.5;
+            white-space: pre-wrap;
+        }
+
+        .msg-row.user .msg-bubble {
+            background: #2563eb;
+            color: white;
+            border-bottom-right-radius: 4px;
+        }
+
+        .msg-row.assistant .msg-bubble {
+            background: #111827;
+            border: 1px solid #1f2937;
+            border-bottom-left-radius: 4px;
+        }
+
+        .typing {
+            font-size: 12px;
+            color: #9ca3af;
+            padding: 4px 18px 8px;
+            display: none;
+        }
+
+        .chat-input {
+            border-top: 1px solid #1f2937;
+            padding: 10px 12px;
+            background: #020617;
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .chat-input textarea {
+            flex: 1;
+            resize: none;
+            border-radius: 999px;
+            border: 1px solid #374151;
+            padding: 10px 14px;
+            background: #020617;
+            color: #e5e7eb;
+            font-size: 14px;
+            outline: none;
+            max-height: 120px;
+        }
+
+        .chat-input textarea:focus {
+            border-color: #60a5fa;
+        }
+
+        .chat-input button {
+            border-radius: 999px;
+            border: none;
+            padding: 10px 16px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            background: linear-gradient(135deg, #22c55e, #3b82f6);
+            color: #020617;
+        }
+
+        .chat-input button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        @media (max-width: 600px) {
+            .chat-shell {
+                max-height: 100%;
+                border-radius: 12px;
+            }
+
+            .msg-bubble {
+                max-width: 90%;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="chat-shell">
+        <div class="chat-header">
+            <div class="avatar">F</div>
+            <div class="title-block">
+                <h1>Future-Me Simulator</h1>
+                <span>Ask your future self about your dev journey</span>
+            </div>
+        </div>
+
+        <div id="chat-log" class="chat-log">
+            <div class="msg-row assistant">
+                <div class="msg-bubble">
+                    Future-You: Hey, it's you from the future. I’ve been watching your GitHub history.
+                    Ask me anything about where your dev journey is heading.
+                </div>
+            </div>
+        </div>
+
+        <div id="typing" class="typing">Future-You is typing…</div>
+
+        <form id="chat-form" class="chat-input">
+            <textarea id="user-input" rows="1"
+                placeholder="Ask Future-You something like: What will my skills look like in a year?"></textarea>
+            <button type="submit">Send</button>
+        </form>
+    </div>
+
+    <script>
+        const form = document.getElementById("chat-form");
+        const input = document.getElementById("user-input");
+        const log = document.getElementById("chat-log");
+        const typingEl = document.getElementById("typing");
+
+        let sessionId = localStorage.getItem("futureMeSessionId") || null;
+
+        function appendMessage(role, text) {
+            const row = document.createElement("div");
+            row.className = "msg-row " + (role === "user" ? "user" : "assistant");
+
+            const bubble = document.createElement("div");
+            bubble.className = "msg-bubble";
+            bubble.textContent = text;
+
+            row.appendChild(bubble);
+            log.appendChild(row);
+            log.scrollTop = log.scrollHeight;
+        }
+
+        async function sendMessage(message) {
+            typingEl.style.display = "block";
+            try {
+                const res = await fetch("/api/chat", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ message, session_id: sessionId }),
+                });
+
+                if (!res.ok) {
+                    appendMessage("assistant", "Future-You: I hit an error talking to the backend.");
+                    return;
+                }
+
+                const data = await res.json();
+                if (data.session_id && !sessionId) {
+                    sessionId = data.session_id;
+                    localStorage.setItem("futureMeSessionId", sessionId);
+                }
+
+                appendMessage("assistant", data.reply);
+            } catch (err) {
+                console.error(err);
+                appendMessage("assistant", "Future-You: I couldn't reach our brain right now. Try again?");
+            } finally {
+                typingEl.style.display = "none";
+            }
+        }
+
+        form.addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const text = input.value.trim();
+            if (!text) return;
+            appendMessage("user", text);
+            input.value = "";
+            await sendMessage(text);
+        });
+
+        input.addEventListener("keydown", (e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                form.dispatchEvent(new Event("submit"));
+            }
+        });
+    </script>
+</body>
+
+</html>
