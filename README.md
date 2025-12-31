@@ -538,5 +538,3 @@ Found this helpful? ⭐ Star the repo • 🐛 Report issues • 💡 Suggest fe
 - Email: azizzoaib786@gmail.com
 
 ---
-
-*"The best way to predict your future is to understand your past and create it with intention." - Aziz Zoaib*
