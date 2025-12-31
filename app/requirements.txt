@@ -5,9 +5,14 @@ python-dotenv
 langchain
 langchain-core
 langchain-community
-langchain-openai
-langchain-classic
 
-redis
-redisvl
+langchain-groq
+
+sentence-transformers
+langchain-huggingface
+
+redis[search]==4.6.0
+
 PyGithub
+
+gunicorn

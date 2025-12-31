@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# app.py — Future-Me (all GitHub repos, max commits global) using Redis + LangChain + OpenAI
+# app.py — Future-Me (all GitHub repos, max commits global) using Redis + LangChain + Groq
 
 import os
 import uuid
@@ -14,32 +14,32 @@ from pydantic import BaseModel
 from github import Github, GithubException
 
 from langchain_core.documents import Document
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Redis as RedisVectorStore
+
+from langchain_groq import ChatGroq
+
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_classic.chains.combine_documents import create_stuff_documents_chain
-from langchain_classic.chains import create_retrieval_chain
-from langchain_core.runnables import RunnableWithMessageHistory
 from langchain_community.chat_message_histories import ChatMessageHistory
 from langchain_core.chat_history import BaseChatMessageHistory
 
-# Env & config
+# ENV configs
 load_dotenv()
 
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-GITHUB_TOKEN   = os.getenv("GITHUB_TOKEN")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 
 # Global max commits across ALL repos
-MAX_COMMITS    = int(os.getenv("GITHUB_MAX_COMMITS", "100"))
+MAX_COMMITS = int(os.getenv("GITHUB_MAX_COMMITS", "100"))
 
-FUTURE_ME_NAME        = os.getenv("FUTURE_ME_NAME", "Aziz")
+FUTURE_ME_NAME = os.getenv("FUTURE_ME_NAME", "Aziz")
 FUTURE_ME_YEARS_AHEAD = int(os.getenv("FUTURE_ME_YEARS_AHEAD", "1"))
 
-REDIS_URL        = os.getenv("REDIS_URL", "redis://redis:6379/0")
+REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 REDIS_INDEX_NAME = os.getenv("REDIS_INDEX_NAME", "future_me_github")
 
-if not OPENAI_API_KEY:
-    raise RuntimeError("OPENAI_API_KEY is required")
+if not GROQ_API_KEY:
+    raise RuntimeError("GROQ_API_KEY is required (Groq Llama 3 key)")
 if not GITHUB_TOKEN:
     raise RuntimeError("GITHUB_TOKEN is required")
 
@@ -71,7 +71,6 @@ def fetch_all_repos_commits(token: str, max_global_commits: int = 100) -> List[D
         try:
             commits = repo.get_commits()
 
-            # Important: wrap the iteration itself in try/except
             for c in commits:
                 if total_commits_collected >= max_global_commits:
                     break
@@ -99,15 +98,17 @@ def fetch_all_repos_commits(token: str, max_global_commits: int = 100) -> List[D
                 total_commits_collected += 1
 
         except GithubException as e:
-            # This catches "Git Repository is empty." and any similar API errors
+            # Handles "Git Repository is empty." and similar errors
             print(f"[init] Skipping repo {repo.full_name} due to error: {e}")
             continue
 
     print(f"[init] Total commits collected across all repos: {total_commits_collected}")
     return all_docs
 
-# Vector store: Redis (Redis Stack / RedisVL) + retriever
-embeddings = OpenAIEmbeddings()
+# Vector store: Redis (Redis Stack) + retriever
+# Using local HuggingFace embeddings → no external embedding API required
+embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+
 
 def build_or_refresh_index() -> RedisVectorStore:
     """
@@ -138,21 +139,24 @@ def build_or_refresh_index() -> RedisVectorStore:
         embedding=embeddings,
         redis_url=REDIS_URL,
         index_name=REDIS_INDEX_NAME,
-        # HNSW is generally a good choice for approximate nearest neighbour
         vector_schema={"algorithm": "HNSW"},
     )
 
     print(f"[init] Created Redis index '{REDIS_INDEX_NAME}' with {len(docs)} docs.")
     return vs
 
+
 vector_store = build_or_refresh_index()
 retriever = vector_store.as_retriever(search_kwargs={"k": 8})
 
-# LangChain QA chain with chat history
-def build_base_chain():
-    llm = ChatOpenAI(model="gpt-4.1-mini", temperature=0.7)
+# LLM + Prompt (new-style LangChain)
+# (Use whichever Groq model is working)
+llm = ChatGroq(
+    model=os.getenv("GROQ_MODEL", "llama-3.1-8b-instant"),  # or whichever you've set
+    temperature=0.7,
+)
 
-    system_prompt = f"""
+system_prompt = f"""
 You are a simulated FUTURE VERSION of {FUTURE_ME_NAME}, exactly {FUTURE_ME_YEARS_AHEAD} year(s) from now.
 
 You only know what is in the provided context, which is built from their GitHub commit history across ALL their repos:
@@ -170,39 +174,44 @@ Your job is to:
 - If the user asks something unrelated to work/coding, you can still respond, but ground your answer in the style/patterns you see.
 
 ALWAYS preface your answer with: "Future-{FUTURE_ME_NAME}:".
-    """.strip()
+""".strip()
 
-    prompt = ChatPromptTemplate.from_messages(
-        [
-            ("system", system_prompt),
-            MessagesPlaceholder("chat_history"),
-            ("human", "{input}"),
-        ]
-    )
+prompt = ChatPromptTemplate.from_messages(
+    [
+        ("system", system_prompt),
+        MessagesPlaceholder("chat_history"),
+        (
+            "system",
+            "Here are some relevant snippets from my past GitHub activity:\n{context}",
+        ),
+        ("human", "{input}"),
+    ]
+)
 
-    doc_chain = create_stuff_documents_chain(llm, prompt)
-    retrieval_chain = create_retrieval_chain(retriever, doc_chain)
-    return retrieval_chain
 
-base_chain = build_base_chain()
+def format_context(docs: List[Document]) -> str:
+    """Turn retrieved docs into a readable context string."""
+    chunks = []
+    for d in docs:
+        repo = d.metadata.get("repo", "unknown-repo")
+        date = d.metadata.get("date", "")
+        sha = d.metadata.get("sha", "")[:7]
+        prefix = f"[{repo} @ {date} {sha}]".strip()
+        chunks.append(f"{prefix}\n{d.page_content}")
+    return "\n\n".join(chunks)
 
-# In-memory session → chat history mapping
+
+# Session history (manual, simple, robust)
 _session_store: Dict[str, ChatMessageHistory] = {}
+
 
 def get_session_history(session_id: str) -> BaseChatMessageHistory:
     if session_id not in _session_store:
         _session_store[session_id] = ChatMessageHistory()
     return _session_store[session_id]
 
-chain_with_history = RunnableWithMessageHistory(
-    base_chain,
-    lambda config: get_session_history(config["configurable"]["session_id"]),
-    input_messages_key="input",
-    history_messages_key="chat_history",
-)
-
 # FastAPI app
-app = FastAPI(title="Future-Me Simulator (All GitHub Repos + RedisVL)")
+app = FastAPI(title="Future-Me Simulator (All GitHub Repos + Redis + Groq)")
 
 app.add_middleware(
     CORSMiddleware,
@@ -211,9 +220,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Serve static files (chat UI)
-app.mount("/", StaticFiles(directory="static", html=True), name="static")
 
 
 class ChatRequest(BaseModel):
@@ -228,12 +234,34 @@ class ChatResponse(BaseModel):
 
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest):
+    # 1) Work out session id
     session_id = req.session_id or str(uuid.uuid4())
 
-    result = chain_with_history.invoke(
-        {"input": req.message},
-        config={"configurable": {"session_id": session_id}},
-    )
+    # 2) Get (or create) the chat history for this session
+    history = get_session_history(session_id)
 
-    reply = result["answer"]
-    return ChatResponse(reply=reply, session_id=session_id)
+    # 3) RAG step: retrieve docs based on the user's message
+    docs = retriever.invoke(req.message)
+    context_str = format_context(docs)
+
+    # 4) Build the full prompt with context + history
+    prompt_messages = prompt.format_prompt(
+        input=req.message,
+        chat_history=history.messages,
+        context=context_str,
+    ).to_messages()
+
+    # 5) Call the LLM
+    response = llm.invoke(prompt_messages)
+    answer = response.content
+
+    # 6) Update history with this new turn
+    history.add_user_message(req.message)
+    history.add_ai_message(answer)
+
+    # 7) Return reply + session id to the frontend
+    return ChatResponse(reply=answer, session_id=session_id)
+
+
+# Serve static files (chat UI) — MUST be last so /api/chat is not shadowed
+app.mount("/", StaticFiles(directory="static", html=True), name="static")

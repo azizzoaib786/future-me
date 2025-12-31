@@ -15,14 +15,14 @@ spec:
     spec:
       containers:
         - name: future-me-app
-          image: future-me/app:v3
+          image: future-me/app:v14-groq
           imagePullPolicy: Never #Important since image is local only
           env:
-            - name: OPENAI_API_KEY
+            - name: GROQ_API_KEY
               valueFrom:
                 secretKeyRef:
                   name: future-me-secrets
-                  key: openai-api-key
+                  key: groq-api-key
             - name: GITHUB_TOKEN
               valueFrom:
                 secretKeyRef:
@@ -59,6 +59,6 @@ spec:
     app: future-me-app
   ports:
     - name: http
-      port: 80
+      port: 8000
       targetPort: 8000
   type: ClusterIP
