@@ -27,7 +27,6 @@ An intelligent conversational AI that:
 - 🎨 **Modern dark-themed chat UI** with real-time messaging and typing indicators
 - 🧠 **RAG Architecture** - Redis Stack HNSW + HuggingFace embeddings (local, no API costs)
 - 🚀 **Sub-second responses** with Groq's optimized Llama 3 inference
-- 🔒 **Production-ready** with Kubernetes Secrets and session management
 - 📊 **Smart retrieval** - Top-K semantic search across your commit history
 
 ## 🏗️ **Architecture**
@@ -127,10 +126,6 @@ docker build -t future-me/app:latest .
 
 # For Kind cluster (load image locally)
 kind load docker-image future-me/app:latest
-
-# For production, push to your registry
-docker tag future-me/app:latest your-registry/future-me:latest
-docker push your-registry/future-me:latest
 ```
 
 ### **Step 3: Configure Secrets**
@@ -290,21 +285,9 @@ Chat endpoint for conversational interactions.
 
 Serves the chat UI (static HTML).
 
-## 🏭 **Production Deployment**
+## 🌐 **Access Options**
 
-### **Scaling**
-
-```bash
-# Scale application pods for high availability
-kubectl scale deployment future-me-app --replicas=3 -n future-me
-
-# Scale Redis for read replicas (requires StatefulSet)
-kubectl scale statefulset redis-stack --replicas=3 -n future-me
-```
-
-### **Port Forwarding for External Access**
-
-To access your application from outside the cluster:
+### **Port Forwarding**
 
 #### **Option 1: Simple Port Forward**
 ```bash
@@ -378,7 +361,7 @@ lsof -i :8000
 kill -9 <PID>
 ```
 
-### **Monitoring**
+### **Viewing Logs**
 
 ```bash
 # View application logs
@@ -387,43 +370,8 @@ kubectl logs -f deployment/future-me-app -n future-me
 # Check Redis logs
 kubectl logs -f deployment/redis-stack -n future-me
 
-# Monitor resource usage
-kubectl top pods -n future-me
-
 # Check pod status
-kubectl get pods -n future-me -w
-```
-
-### **Redis Persistence**
-
-For production, add persistent volumes to Redis:
-
-```yaml
-# Add to redis-stack.yaml
-spec:
-  template:
-    spec:
-      containers:
-        - name: redis-stack
-          volumeMounts:
-            - name: redis-data
-              mountPath: /data
-      volumes:
-        - name: redis-data
-          persistentVolumeClaim:
-            claimName: redis-pvc
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: redis-pvc
-  namespace: future-me
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 10Gi
+kubectl get pods -n future-me
 ```
 
 ## 🔍 **Troubleshooting**
@@ -538,30 +486,7 @@ env:
 - **Learning Guidance** - "Based on my GitHub, what should I study next?" • "Which frameworks align with my experience?"
 - **Resume Building** - "Summarize my most significant contributions" • "How can I describe my GitHub work on my resume?"
 
-## 📊 **Performance Benchmarks**
 
-### **Response Times**
-
-| Operation | Cold Start | Warm (Cached) |
-|-----------|------------|---------------|
-| Initial index build (100 commits) | 45-90s | N/A |
-| First chat message | 2-4s | 1-2s |
-| Subsequent messages | 1.5-3s | 0.8-1.5s |
-| Vector search (K=8) | 50-100ms | 20-50ms |
-
-### **Resource Usage** (Single Pod)
-
-- **CPU**: 100-400m (idle to active)
-- **Memory**: 600Mi-900Mi (with embedding model loaded)
-- **Network**: <5MB/s typical
-- **Disk**: ~1GB (embedding model cache)
-
-### **Groq API Performance**
-
-- **Tokens/sec**: 500-700 (Llama 3 70B)
-- **Latency**: 100-300ms (first token)
-- **Context window**: 8192 tokens
-- **Daily free tier**: 14,400 requests
 
 ## 🤝 **Contributing**
 
@@ -581,13 +506,14 @@ uvicorn app:app --reload --host 0.0.0.0 --port 8000
 
 **Ideas:** Bug fixes • New chat features • Analytics • UI/UX • Tests • Docs • Multi-language • Performance • Security
 
-## 🔐 **Security**
+## 🔐 **Security Notes**
 
-**Implemented:** Kubernetes Secrets management • CORS enabled • Local embedding processing • Pydantic input validation • No permanent commit storage • Session-based isolation
+**⚠️ This is a hobby project for personal use. Security features:**
+- Kubernetes Secrets for API keys (don't commit secrets to Git!)
+- Local embedding processing (data stays in your cluster)
+- No permanent storage of commit data
 
-**Production Checklist:** Rotate API keys (90 days) • Read-only GitHub token • NetworkPolicies • Rate limiting • Authentication • Redis AUTH • TLS encryption • Dependency updates (`pip-audit`) • Container scanning
-
-**Report vulnerabilities:** Email **azizzoaib786@gmail.com** directly (not public issues)
+**For personal use:** Keep your API keys safe and use a read-only GitHub token
 
 ## 📜 **License**
 
