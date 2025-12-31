@@ -118,17 +118,45 @@ cd future-me
 
 > **Note**: Feel free to fork this repo and customize it for your own GitHub analysis!
 
-### **Step 2: Build Application Image**
+### **Step 2: Create Kind Cluster (Optional)**
+
+If you don't have a Kubernetes cluster, create one with Kind:
+
+```bash
+# Install Kind (if not already installed)
+# macOS
+brew install kind
+
+# Linux
+curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
+chmod +x ./kind
+sudo mv ./kind /usr/local/bin/kind
+
+# Create cluster using provided config
+kind create cluster --config cluster/future-me-cluster.yaml --name future-me
+
+# Verify cluster is running
+kubectl cluster-info --context kind-future-me
+kubectl get nodes
+```
+
+> **Skip this step** if you're using an existing cluster (minikube, GKE, EKS, AKS, etc.)
+
+### **Step 3: Build Application Image**
 ```bash
 # Build Docker image
 cd app
 docker build -t future-me/app:latest .
 
-# For Kind cluster (load image locally)
-kind load docker-image future-me/app:latest
+# For Kind cluster - load image locally (skip for cloud clusters)
+kind load docker-image future-me/app:latest --name future-me
+
+# For cloud clusters - push to your registry
+# docker tag future-me/app:latest your-registry/future-me:latest
+# docker push your-registry/future-me:latest
 ```
 
-### **Step 3: Configure Secrets**
+### **Step 4: Configure Secrets**
 
 Edit `k8s/future-me-secrets.yaml` with your API keys:
 
@@ -138,7 +166,9 @@ stringData:
   github-token: "your_github_token_here"
 ```
 
-**⚠️ Security Warning**: Never commit real secrets to Git! Use this for local development only. For production, use:
+**⚠️ Security Warning**: Never commit real secrets to Git! Use this for local development only.
+
+Alternatively, create secrets via kubectl:
 
 ```bash
 kubectl create secret generic future-me-secrets \
@@ -147,7 +177,7 @@ kubectl create secret generic future-me-secrets \
   --namespace=future-me
 ```
 
-### **Step 4: Deploy to Kubernetes**
+### **Step 5: Deploy to Kubernetes**
 ```bash
 # Deploy Redis Stack (vector database)
 kubectl apply -f k8s/redis-stack.yaml
@@ -165,7 +195,7 @@ kubectl apply -f k8s/future-me-deployment.yaml
 kubectl wait --for=condition=ready pod -l app=future-me-app -n future-me --timeout=300s
 ```
 
-### **Step 5: Access the Application**
+### **Step 6: Access the Application**
 ```bash
 # Port forward to local machine
 kubectl port-forward service/future-me-app 8000:8000 -n future-me
@@ -174,7 +204,7 @@ kubectl port-forward service/future-me-app 8000:8000 -n future-me
 # http://localhost:8000
 ```
 
-### **Step 6: Start Chatting!**
+### **Step 7: Start Chatting!**
 
 Ask questions like:
 - "Based on my GitHub activity, what will I be working on in 1 year?"
